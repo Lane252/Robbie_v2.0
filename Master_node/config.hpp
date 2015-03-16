@@ -1,0 +1,18 @@
+#include "Eigen/Eigen"
+
+#define JOINTS 6
+#define TOLERANCE 0.00001
+#define MAX_ITER 100000
+#define EF_ERROR_TOLERANCE 0.00001
+
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+
+
+
+using Eigen::MatrixXd;
+using Eigen::VectorXd;
+using Eigen::Matrix4d;

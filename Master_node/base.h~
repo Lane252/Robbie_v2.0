@@ -1,0 +1,148 @@
+#include <iostream>
+#include <string>
+#include <boost/thread/thread.hpp>
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <termios.h>
+
+
+#include <net/if.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+
+#include <linux/can.h>
+#include <linux/can/raw.h>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+class base
+{
+private:
+
+    void setupCanSocket();
+    void setupUdpSocket();
+
+    string stripNum(string text)
+	{
+	    char nums[] = "0123456789";
+
+	    for (int i = 0; i < strlen(nums); i++)
+	    {
+	        text.erase(remove(text.begin(), text.end(), nums[i]), text.end());
+	    }
+	    return text;
+	}
+
+	bool canInputPer(string className)
+	{
+	    if (className == "canInput") {return true;}
+	    else {return false;}
+	}
+
+	bool humanInputPer(string className)
+	{
+	    if (className == "humanInput") {return true;}
+	    else {return false;}
+	}
+
+	bool balanceInputPer(string className)
+	{
+	    if (className == "balance") {return true;}
+	    else {return false;}
+	}
+
+	string getClass()
+	{
+	    return stripNum(typeid(*this).name());
+    }
+
+    bool range(int num, int lower, int upper)
+    {
+        if (num >= lower && num <= upper){return true;}
+        else {return false;}
+    }
+
+    bool range(int num, int lower)
+    {
+        if (num >= lower){return true;}
+        else {return false;}
+    }
+
+	//CAN_IN
+    static int PRESSURE[13];
+    static int ENCODER[7];
+    static int IMU[7][3];
+    static int ULTRASONIC[4];
+    static int STRINGPOT[2];
+
+    //CAN_OUT
+    static int PWM[30];
+
+	//APP_IN
+	static int WHEEL_L;
+    static int WHEEL_R;
+    static bool CLIMB;
+    static int STEPS;
+
+public:
+
+	base()
+	{
+	    if (constructor)
+	    {
+	        setupCanSocket();
+            setupUdpSocket();
+            constructor = false;
+	    }
+	}
+
+	virtual ~base(){}
+
+	void sendCan(unsigned char id, unsigned char (&data)[8]);
+
+	bool valid(int num)
+    {
+        if (num == -1){return false;}
+        else {return true;}
+    }
+
+    //CAN_IN
+    const int& getP(int elem){return PRESSURE[elem];}
+	void setP(int num, int elem){if (canInputPer(getClass())) {PRESSURE[elem] = num;}}
+
+    const int& getE(int elem){return ENCODER[elem];}
+	void setE(int num, int elem){if (canInputPer(getClass())) {ENCODER[elem] = num;}}
+
+    const int& getIMU(int elem, int pos){return IMU[elem][pos];} //const int (&arr)[7][3] = getIMU();
+    void setIMU(int num, int elem, int pos){if (canInputPer(getClass())) {IMU[elem][pos] = num;}}
+
+    const int& getU(int elem){return ULTRASONIC[elem];}
+	void setU(int num, int elem){if (canInputPer(getClass())) {ULTRASONIC[elem] = num;}}
+
+    const int& getSP(int elem){return STRINGPOT[elem];}
+	void setSP(int num, int elem){if (canInputPer(getClass())) {STRINGPOT[elem] = num;}}
+
+	//CAN_OUT
+
+    //APP_IN
+	const int& getWL(){return WHEEL_L;}
+	void setWL(int num){if (humanInputPer(getClass())) {WHEEL_L = num;}}
+
+	const int& getWR(){return WHEEL_R;}
+	void setWR(int num){if (humanInputPer(getClass())) {WHEEL_R = num;}}
+
+	const bool& getCLM(){return CLIMB;}
+	void setCLM(bool val){if (humanInputPer(getClass())) {CLIMB = val;}}
+
+	const int& getSTP(){return STEPS;}
+	void setSTP(int num){if (humanInputPer(getClass())) {STEPS = num;}}
+};
+
+

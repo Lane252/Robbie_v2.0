@@ -1,0 +1,449 @@
+#include <iostream>
+#include <string>
+#include <boost/thread/thread.hpp>
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <termios.h>
+
+
+#include <net/if.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+
+#include <linux/can.h>
+#include <linux/can/raw.h>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <unistd.h>
+
+#include "base.h"
+
+
+
+using namespace std;
+
+//CAN socket variables
+int s;
+int nbytes;
+struct sockaddr_can addr;
+struct can_frame frame;
+struct ifreq ifr;
+char *ifname = "can0";
+
+//UDP socket variables
+const int BUFLEN = 8;
+const int PORT = 9930;
+struct sockaddr_in my_addr, cli_addr;
+int sockfd, i;
+socklen_t slen=sizeof(cli_addr);
+char buf[BUFLEN];
+
+bool constructor = true;
+
+void err(char *str)
+{
+    perror(str);
+    exit(1);
+}
+
+//_______________________________________________________________________________________
+static struct termios old, newset;
+
+/* Initialize new terminal i/o settings */
+void initTermios(int echo) 
+{
+  tcgetattr(0, &old); /* grab old terminal i/o settings */
+  newset = old; /* make new settings same as old settings */
+  newset.c_lflag &= ~ICANON; /* disable buffered i/o */
+  newset.c_lflag &= echo ? ECHO : ~ECHO; /* set echo mode */
+  tcsetattr(0, TCSANOW, &newset); /* use these new terminal i/o settings now */
+}
+
+/* Restore old terminal i/o settings */
+void resetTermios(void) 
+{
+  tcsetattr(0, TCSANOW, &old);
+}
+
+/* Read 1 character - echo defines echo mode */
+char getch_(int echo) 
+{
+  char ch;
+  initTermios(echo);
+  ch = getchar();
+  resetTermios();
+  return ch;
+}
+
+/* Read 1 character without echo */
+char getch(void) 
+{
+  return getch_(0);
+}
+
+/* Read 1 character with echo */
+char getche(void) 
+{
+  return getch_(1);
+}
+
+//_______________________________________________________________________________________
+
+
+
+
+//_______________________________________________________________________________________
+
+class canInput : public base
+{
+public:
+        void run();
+};
+
+void canInput::run()
+{
+    while(1)
+    {
+        nbytes = read(s, &frame, sizeof(struct can_frame));
+        if (nbytes < 0)
+        {
+            err("ERROR reading CAN socket");
+        }
+        switch(frame.can_id)
+        {
+            //CAN0
+            case 0x0B: setE(frame.data[0], 0); break;
+            case 0x0C: setIMU(frame.data[0], 0, 0);
+                        setIMU(frame.data[1], 0, 1);
+                        setIMU(frame.data[2], 0, 2); break;
+            case 0x0D: setU(frame.data[0], 0); break;
+            case 0x0E: setU(frame.data[0], 1); break;
+            case 0x0F: setP(frame.data[0], 0); break;
+            case 0x10: setP(frame.data[0], 1); break;
+
+            //CAN1
+            case 0x15: setE(frame.data[0], 1); break;
+            case 0x16: setIMU(frame.data[0], 1, 0);
+                        setIMU(frame.data[1], 1, 0);
+                        setIMU(frame.data[2], 1, 0); break;
+            case 0x17: setU(frame.data[0], 2); break;
+            case 0x18: setU(frame.data[0], 3); break;
+            case 0x19: setP(frame.data[0], 2); break;
+            case 0x1A: setP(frame.data[0], 3); break;
+
+            //CAN2
+            case 0x1F: setIMU(frame.data[0], 2, 0);
+                        setIMU(frame.data[1], 2, 1);
+                        setIMU(frame.data[2], 2, 2); break;
+            case 0x1C: setP(frame.data[0], 4); break;
+            case 0x1D: setP(frame.data[0], 5); break;
+
+            //CAN3
+            case 0x29: setP(frame.data[0], 6); break;
+            case 0x2A: setP(frame.data[0], 7); break;
+
+            //CAN4
+            case 0x33: setE(frame.data[0], 2); break;
+
+            //CAN5
+            case 0x3D: setE(frame.data[0], 3); break;
+            case 0x3E: setE(frame.data[0], 4); break;
+            case 0x3F: setIMU(frame.data[0], 3, 0);
+                        setIMU(frame.data[1], 3, 1);
+                        setIMU(frame.data[2], 3, 2); break;
+            case 0x40: setP(frame.data[0], 8); break;
+
+            //CAN6
+            case 0x47: setE(frame.data[0], 5); break;
+            case 0x48: setSP(frame.data[0], 0); break;
+            case 0x49: setP(frame.data[0], 9); break;
+            case 0x4A: setP(frame.data[0], 10); break;
+            case 0x4B: setIMU(frame.data[0], 4, 0);
+                        setIMU(frame.data[1], 4, 1);
+                        setIMU(frame.data[2], 4, 2); break;
+
+            //CAN7
+            case 0x51: setE(frame.data[0], 6); break;
+            case 0x52: setSP(frame.data[0], 1); break;
+            case 0x53: setP(frame.data[0], 11); break;
+            case 0x54: setP(frame.data[0], 12); break;
+            case 0x55: setIMU(frame.data[0], 5, 0);
+                        setIMU(frame.data[1], 5, 1);
+                        setIMU(frame.data[2], 5, 2); break;
+        }
+    }
+}
+
+//_______________________________________________________________________________________
+
+class humanInput : public base
+{
+private:
+        int socketCheck;
+public:
+        void run();
+};
+
+void humanInput::run()
+{
+    while(1)
+    {
+        socketCheck = recvfrom(sockfd, buf, BUFLEN, 0, (struct sockaddr*) &cli_addr, &slen);
+        if (socketCheck < 0)
+        {
+            err("recvfrom");
+
+        }
+        //printf("Received packet from %s:%d\nData: %s\n\n", inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port), buf);
+        cout << buf << endl;
+        for (int i = 0; i < BUFLEN; i++)
+        {
+            buf[i] = 0;
+        }
+    }
+    close(sockfd);
+}
+
+//_______________________________________________________________________________________
+
+class compressor : public base
+{
+private:
+        static unsigned char data[8];
+        static const unsigned char id;
+public:
+        void run();
+};
+
+unsigned char compressor::data[8] = {0,0,0,0,0,0,0,0};
+const unsigned char compressor::id = 0x05; //to be set
+
+void compressor::run()
+{
+    while(1)
+    {
+        if (valid(getP(0)))
+        {
+            if (getP(0) > 100)
+            {
+                data[0] = 0x00;
+                sendCan(id, data);
+            }
+            else if (getP(0) < 80)
+            {
+                data[0] = 0x01;
+                sendCan(id, data);
+            }
+        }
+        sleep(1);
+    }
+}
+
+//_______________________________________________________________________________________
+
+class information : public base
+{
+private:
+        void clearTerminal(int num);
+        void psiBar(const int& psi, string varName);
+        void imuVal(const int &imuY, const int &imuP, const int &imuR, string varName);
+
+        static string scale;
+        double val;
+        int star;
+public:
+        void run();
+};
+
+string information::scale = "0---10---20---30---40---50---60---70---80---90---100";
+
+void information::imuVal(const int &imuY, const int &imuP, const int &imuR, string varName)
+{
+    if (valid(imuY) && valid(imuP) && valid(imuR))
+    {
+        cout << varName << endl;
+        cout << "YAW\tPITCH\tROLL" << endl;
+        cout << imuY << "\t" << imuP << "\t" << imuR << endl;
+    }
+    else
+    {
+        cout << "///" << endl;
+        cout << "No valid data for " << varName << endl;
+        cout << "///" << endl;
+    }
+}
+
+void information::psiBar(const int& psi, string varName)
+{
+    if (valid(psi))
+    {
+        val = (scale.length()/100.0) * psi;
+        star = floor(val + 0.5);
+
+        cout << varName << endl;
+        cout << scale << endl;
+        cout << string(star, '#') << string((scale.length()+1)-star,' ') << "PSI: " << psi << string(10, ' ') << endl;
+    }
+    else
+    {
+        cout << "///" << endl;
+        cout << "No valid data for " << varName << endl;
+        cout << "///" << endl;
+    }
+}
+
+void information::clearTerminal(int num)
+{
+    num *= 3;
+    for (int i = 0; i < num; i++)
+    {
+        cout << "\033[A\033[2K";
+    }
+    rewind(stdout);
+    ftruncate(1,0);
+}
+
+void information::run()
+{
+    while(1)
+    {
+        clearTerminal(100);
+        psiBar(getP(0), "PRESSURE0");
+        psiBar(getP(1), "PRESSURE1");
+        psiBar(getP(2), "PRESSURE2");
+        psiBar(getP(9), "PRESSURE9");
+        imuVal(getIMU(0, 0), getIMU(0, 1), getIMU(0, 2), "IMU0");
+        imuVal(getIMU(1, 0), getIMU(1, 1), getIMU(2, 2), "IMU1");
+        sleep(1);
+    }
+}
+//_______________________________________________________________________________________
+class muscletest : public base
+{
+private: 
+	static unsigned char muscledata1[8];
+	static unsigned char muscledata2[8];
+        static const unsigned char id_1;
+ 	static const unsigned char id_2;
+	
+public:
+        void run();
+};
+	char c;
+	unsigned char muscletest::muscledata1[8] = {0,0,0,0,0,0,0,0};
+	unsigned char muscletest::muscledata2[8] = {0,0,0,0,0,0,0,0};
+	const unsigned char muscletest::id_1 = 0x08; //to be set
+	const unsigned char muscletest::id_2 = 0x09; //to be set
+void muscletest::run()
+{
+    while(1)
+    {
+  	
+			cout<<"Input Muscle Command (w,a,s,d)"<<endl;
+ 			c = getche();
+  		cout<<"\nYou typed: %c\n"<<c<<endl;
+  	
+		if (c=='w')
+	{
+	 		cout<<"muscle 1"<<endl;
+	}
+  	else if (c=='a')
+	{
+		cout<<"muscle 2"<<endl;
+	}
+	else 
+	{
+		cout<<"Not valid input"<<endl;
+		c=getche();
+	}
+        sleep(1);
+    }
+}
+
+//_______________________________________________________________________________________
+
+class power : public base
+{
+public:
+        void run();
+};
+
+void power::run()
+{
+    while(1)
+    {
+        sleep(1);
+    }
+}
+
+//_______________________________________________________________________________________
+
+class balance : public base
+{
+public:
+        void run();
+};
+
+void balance::run()
+{
+    while(1)
+    {
+        sleep(1);
+    }
+}
+
+//_______________________________________________________________________________________
+
+class climbStairs : public base
+{
+public:
+        void run();
+};
+
+void climbStairs::run()
+{
+    while(1)
+    {
+        sleep(1);
+    }
+}
+
+//_______________________________________________________________________________________
+
+int main()
+{
+    canInput can;
+    boost::thread canThread(boost::bind(&canInput::run, &can));
+
+    humanInput human;
+    boost::thread humanThread(boost::bind(&humanInput::run, &human));
+
+    compressor comp;
+    boost::thread compThread(boost::bind(&compressor::run, &comp));
+
+    information info;
+    boost::thread infoThread(boost::bind(&information::run, &info));
+
+    power pow;
+    boost::thread powThread(boost::bind(&power::run, &pow));
+
+    balance bal;
+    boost::thread balThread(boost::bind(&balance::run, &bal));
+
+    climbStairs climb;
+    boost::thread climbThread(boost::bind(&climbStairs::run, &climb));
+
+    muscletest muscle;
+    boost::thread muscleThread(boost::bind(&muscletest::run, &muscle));
+
+
+	while(1){}
+
+    return 0;
+}
